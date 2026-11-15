@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Silben-Abenteuer: Jump & Run</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #87CEEB; /* Himmelblau */
+            font-family: 'Inter', sans-serif;
+            touch-action: none; /* Verhindert Scrollen auf Mobile */
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* UI Overlay Layers */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 10;
+        }
+        .hidden {
+            display: none !important;
+        }
+        /* Mobile Controls */
+        #mobile-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 5;
+            pointer-events: none; /* Damit Klicks durchgehen, wo keine Buttons sind */
+        }
+        .control-btn {
+            pointer-events: auto;
+            background: rgba(255, 255, 255, 0.5);
+            border: 2px solid white;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            color: #333;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .control-btn:active {
+            background: rgba(255, 255, 255, 0.8);
+        }
+        @media (min-width: 768px) {
+            #mobile-controls {
+                display: none;
+            }
+        }
+        
+        /* Animationen */
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-bounce-slow {
+            animation: bounce 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Mobile Touch Controls -->
+    <div id="mobile-controls">
+        <div class="flex gap-4">
+            <button id="btn-left" class="control-btn">←</button>
+            <button id="btn-right" class="control-btn">→</button>
+        </div>
+        <div class="flex gap-2">
+            <button id="btn-shoot-up" class="control-btn text-xl font-bold">X↑</button>
+            <button id="btn-shoot" class="control-btn text-xl font-bold">X→</button>
+            <button id="btn-bomb" class="control-btn text-2xl">💣</button>
+            <button id="btn-jump" class="control-btn" style="width: 80px; border-radius: 20px;">UP</button>
+        </div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="startScreen" class="overlay">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-md text-center transform transition-transform scale-100">
+            <h1 class="text-4xl font-bold text-blue-600 mb-4 animate-bounce-slow">Silben-Abenteuer</h1>
+            <p class="text-gray-700 mb-6 text-lg">
+                Hilf unserem Helden durch das Level! Hindernisse versperren den Weg. Löse die Aufgaben zur <b>Silbentrennung</b>, um weiterzukommen.
+            </p>
+            <div class="bg-blue-50 p-4 rounded-xl mb-6 text-sm text-blue-800 text-left">
+                <strong>Steuerung:</strong><br>
+                💻 Pfeiltasten / WASD & Leertaste (Springen), B (Bomben), X (Schießen)<br>
+                📱 Touch-Buttons auf dem Bildschirm
+            </div>
+            <button id="startBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-colors w-full">
+                Spiel Starten
+            </button>
+        </div>
+    </div>
+
+    <!-- Question Modal -->
+    <div id="questionModal" class="overlay hidden">
+        <div class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl max-w-lg w-[90%] text-center relative border-4 border-yellow-400">
+            <div class="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-yellow-900 font-bold py-1 px-6 rounded-full border-4 border-white shadow">
+                Aufgabe!
+            </div>
+            <h2 id="questionText" class="text-xl md:text-2xl font-bold text-gray-800 mt-4 mb-6">Frage hier...</h2>
+            
+            <div id="optionsContainer" class="flex flex-col gap-3">
+                <!-- Buttons werden per JS generiert -->
+            </div>
+            
+            <div id="feedbackText" class="mt-4 font-bold text-lg hidden"></div>
+        </div>
+    </div>
+
+    <!-- Victory Screen -->
+    <div id="victoryScreen" class="overlay hidden">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-md text-center">
+            <div class="text-6xl mb-4">🏆</div>
+            <h1 id="victoryTitle" class="text-4xl font-bold text-green-500 mb-4">Level Geschafft!</h1>
+            <p id="victoryText" class="text-gray-700 mb-6 text-lg">
+                Klasse gemacht! Du hast alle Aufgaben gemeistert.
+            </p>
+            <button id="nextLevelBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-colors w-full mb-3">
+                Nächstes Level
+            </button>
+            <button id="restartBtn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-colors w-full">
+                Nochmal spielen
+            </button>
+        </div>
+    </div>
+
+    <!-- Rule Modal -->
+    <div id="ruleModal" class="overlay hidden">
+        <div class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl max-w-md text-center relative border-4 border-blue-400">
+            <div class="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white font-bold py-1 px-6 rounded-full border-4 border-white shadow">
+                Info
+            </div>
+            <div class="text-6xl mb-4 mt-2">📖</div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Neue Regel!</h2>
+            <p id="ruleText" class="text-lg text-blue-900 bg-blue-50 p-4 rounded-xl font-medium mb-6 leading-relaxed"></p>
+            <button id="ruleBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-colors w-full">
+                Verstanden & Weiter
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="overlay hidden">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-md text-center border-4 border-red-400">
+            <div class="text-6xl mb-4">💔</div>
+            <h1 class="text-4xl font-bold text-red-500 mb-4">Game Over</h1>
+            <p class="text-gray-700 mb-6 text-lg">
+                Du hast leider alle Leben verloren. Aber Übung macht den Meister!
+            </p>
+            <button id="restartGameBtn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-colors w-full">
+                Neustart
+            </button>
+        </div>
+    </div>
+
+<script>
+/**
+ * Game Configuration & State
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let gameState = 'start'; // start, playing, paused, won
+let camera = { x: 0, y: 0 };
+let lastTime = 0;
+
+// Audio Context für den Jump-Sound
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playJumpSound() {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.1);
+}
+
+// Resize handling
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Input handling
+const keys = { left: false, right: false, up: false, bomb: false, shoot: false };
+const touchInput = { left: false, right: false, up: false, bomb: false, shoot: false, shootUp: false };
+
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+    if (e.code === 'ArrowUp' || e.code === 'Space' || e.code === 'KeyW') keys.up = true;
+    if (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.bomb = true;
+    if (e.code === 'KeyX') keys.shoot = true;
+});
+window.addEventListener('keyup', (e) => {
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+    if (e.code === 'ArrowUp' || e.code === 'Space' || e.code === 'KeyW') keys.up = false;
+    if (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.bomb = false;
+    if (e.code === 'KeyX') keys.shoot = false;
+});
+
+// Touch controls setup
+const setupTouchBtn = (id, key) => {
+    const btn = document.getElementById(id);
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); touchInput[key] = true; });
+    btn.addEventListener('touchend', (e) => { e.preventDefault(); touchInput[key] = false; });
+    btn.addEventListener('mousedown', (e) => { touchInput[key] = true; });
+    btn.addEventListener('mouseup', (e) => { touchInput[key] = false; });
+    btn.addEventListener('mouseleave', (e) => { touchInput[key] = false; });
+};
+setupTouchBtn('btn-left', 'left');
+setupTouchBtn('btn-right', 'right');
+setupTouchBtn('btn-jump', 'up');
+setupTouchBtn('btn-bomb', 'bomb');
+setupTouchBtn('btn-shoot', 'shoot');
+setupTouchBtn('btn-shoot-up', 'shootUp');
+
+/**
+ * Game Objects
+ */
+const player = {
+    x: 100, y: 100,
+    width: 40, height: 40,
+    vx: 0, vy: 0,
+    speed: 300, jumpForce: -600,
+    gravity: 1500, grounded: false,
+    jumpWasPressed: false, bombWasPressed: false, shootWasPressed: false, canDoubleJump: false,
+    direction: 1, // 1 für rechts, -1 für links
+    color: '#EF4444' // Red avatar
+};
+
+let lives = 3;
+let platforms = [];
+let infoSigns = [];
+let questionBlocks = [];
+let jackpotBlocks = [];
+let activeBombs = [];
+let destructibleWalls = [];
+let explosions = [];
+let projectiles = [];
+let floatingTexts = [];
+let goal = {};
+
+let currentLevel = 1;
+let dragon = { x: -800, y: 0, w: 80, h: 80, speed: 130 }; // Der unerbittliche Drache!
+
+let hasWings = false;
+let bombsCount = 0;
+let safeX = 100;
+let safeY = 100;
+
+// Helper für Zufall
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
+// Die Fragen basierend auf den 5 Zonen/Regeln inkl. der PDF-Fehlerbeispiele
+const zonesData = [
+    {
+        ruleText: "Regel 1: Mehrsilbige Wörter trennt man nach Sprechsilben.",
+        questionsL1: [
+            { q: "Trenne nach Sprechsilben: laufen", options: ["lau-fen", "l-au-fen", "la-uf-en"], correct: 0 },
+            { q: "Trenne nach Sprechsilben: Schule", options: ["Sch-ule", "S-chu-le", "Schu-le"], correct: 2 },
+            { q: "Trenne nach Sprechsilben: Katze", options: ["Kat-ze", "Ka-tze", "Katz-e"], correct: 0 },
+            { q: "Trenne nach Sprechsilben: Blume", options: ["Bl-ume", "Blu-me", "Blum-e"], correct: 1 },
+            { q: "Trenne nach Sprechsilben: Auto", options: ["Au-to", "A-uto", "Aut-o"], correct: 0 }
+        ],
+        questionsL2: [
+            { q: "Trenne nach Sprechsilben: Langeweile", options: ["Lan-ge-wei-le", "Lang-e-wei-le", "La-nge-wei-le"], correct: 0 },
+            { q: "Trenne nach Sprechsilben: verreisen", options: ["ve-rrei-sen", "ver-rei-sen", "verr-ei-sen"], correct: 1 },
+            { q: "Trenne nach Sprechsilben: Rasselbande", options: ["Ra-ssel-ban-de", "Ras-sel-ban-de", "Rass-el-ban-de"], correct: 1 },
+            { q: "Finde den Fehler: Ta-lent-wässerung", options: ["Tal-ent-wäs-se-rung", "Ta-lent-wäs-ser-ung", "Tal-ent-wäs-ser-ung"], correct: 2 },
+            { q: "Korrigiere: Wan-der-falke", options: ["Wand-er-fal-ke", "Wan-der-fal-ke", "Wa-nder-falke"], correct: 1 }
+        ]
+    },
+    {
+        ruleText: "Regel 2: Zusammengesetzte Wörter werden nach ihren Bestandteilen getrennt.",
+        questionsL1: [
+            { q: "Trenne: Haustür", options: ["Haus-tür", "Hau-stür", "Haust-ür"], correct: 0 },
+            { q: "Trenne: Baumhaus", options: ["Baum-haus", "Bau-mhaus", "Baumh-aus"], correct: 0 },
+            { q: "Trenne: Fußball", options: ["Fuß-ball", "Fu-ßball", "Fußb-all"], correct: 0 },
+            { q: "Trenne: Schultasche", options: ["Schul-ta-sche", "Schu-lta-sche", "Schult-asche"], correct: 0 },
+            { q: "Trenne: Wasserglas", options: ["Was-ser-glas", "Wass-er-glas", "Wa-sser-glas"], correct: 0 }
+        ],
+        questionsL2: [
+            { q: "Korrigiere den Fehler: Spargel-der", options: ["Spar-gel-der", "Spargeld-er", "Spa-rgel-der"], correct: 0 },
+            { q: "Korrigiere den Fehler: Blumentop-ferde", options: ["Blumento-pferde", "Blu-men-topf-er-de", "Blu-ment-opf-erde"], correct: 1 },
+            { q: "Korrigiere den Fehler: Hau-stier", options: ["Hau-stier", "Haust-ier", "Haus-tier"], correct: 2 },
+            { q: "Korrigiere den Fehler: Must-opf", options: ["Mus-topf", "Must-opf", "Mu-stopf"], correct: 0 },
+            { q: "Korrigiere den Fehler: Zwergel-stern", options: ["Zwergel-stern", "Zwerg-els-tern", "Zwerge-lstern"], correct: 1 },
+            { q: "Korrigiere den Fehler: Galauni-form", options: ["Galauni-form", "Ga-la-uni-form", "Galaun-iform"], correct: 1 }
+        ]
+    },
+    {
+        ruleText: "Regel 3: Einzelne Buchstaben werden nicht abgetrennt.",
+        questionsL1: [
+            { q: "Darf man 'Opa' als O-pa trennen?", options: ["Ja", "Nein, es bleibt Opa", "Nur am Zeilenende"], correct: 1 },
+            { q: "Finde die richtige Trennung: Igel", options: ["Igel (nicht trennbar)", "I-gel", "Ig-el"], correct: 0 },
+            { q: "Finde die richtige Trennung: Ofen", options: ["O-fen", "Ofen (nicht trennbar)", "Of-en"], correct: 1 },
+            { q: "Finde die richtige Trennung: Ufer", options: ["U-fer", "Uf-er", "Ufer (nicht trennbar)"], correct: 2 },
+            { q: "Finde die richtige Trennung: Oma", options: ["Oma (nicht trennbar)", "O-ma", "Om-a"], correct: 0 }
+        ],
+        questionsL2: [
+            { q: "Wie trennt man 'Aber' richtig?", options: ["A-ber", "Ab-er", "Aber (nicht trennbar)"], correct: 2 },
+            { q: "Darf man 'Abend' als A-bend trennen?", options: ["Ja", "Nein, es bleibt Abend", "Nur am Zeilenende"], correct: 1 },
+            { q: "Trenne das Wort 'Elefant'", options: ["E-le-fant", "El-e-fant", "Ele-fant (E bleibt dran)"], correct: 2 },
+            { q: "Trenne das Wort 'Olympiade'", options: ["O-lym-pi-a-de", "Olym-pi-a-de (O bleibt dran)", "Ol-ym-pi-a-de"], correct: 1 },
+            { q: "Trenne das Wort 'Uhu'", options: ["U-hu", "Uh-u", "Uhu (nicht trennbar)"], correct: 2 }
+        ]
+    },
+    {
+        ruleText: "Regel 4: pf, tz und st können getrennt werden.",
+        questionsL1: [
+            { q: "Trenne das Wort: Karpfen", options: ["Karp-fen", "Kar-pfen", "Karpf-en"], correct: 0 },
+            { q: "Trenne das Wort: Kasten", options: ["Ka-sten", "Kast-en", "Kas-ten"], correct: 2 },
+            { q: "Trenne das Wort: Katze", options: ["Ka-tze", "Kat-ze", "Katz-e"], correct: 1 },
+            { q: "Trenne das Wort: Apfel", options: ["A-pfel", "Ap-fel", "Apf-el"], correct: 1 },
+            { q: "Trenne das Wort: sitzen", options: ["si-tzen", "sit-zen", "sitz-en"], correct: 1 }
+        ],
+        questionsL2: [
+            { q: "Trenne das Wort: Naschkatze", options: ["Nasch-ka-tze", "Nasch-kat-ze", "Nasch-katz-e"], correct: 1 },
+            { q: "Trenne das Wort: klopfen", options: ["klop-fen", "klo-pfen", "klopf-en"], correct: 0 },
+            { q: "Korrigiere: Meist-er", options: ["Meis-ter", "Mei-ster", "Meist-er"], correct: 0 },
+            { q: "Korrigiere: Hü-pfen", options: ["Hüpf-en", "Hüp-fen", "Hü-pfen"], correct: 1 },
+            { q: "Korrigiere: Witz-ig", options: ["Wi-tzig", "Witz-ig", "Wit-zig"], correct: 2 }
+        ]
+    },
+    {
+        ruleText: "Regel 5: ch, ck, sch und th können nicht getrennt werden.",
+        questionsL1: [
+            { q: "Trenne das Wort: lachen", options: ["la-chen", "lach-en", "lac-hen"], correct: 0 },
+            { q: "Trenne das Wort: Zucker", options: ["Zuc-ker", "Zu-cker", "Zuck-er"], correct: 1 },
+            { q: "Trenne das Wort: Fische", options: ["Fis-che", "Fi-sche", "Fisch-e"], correct: 1 },
+            { q: "Trenne das Wort: backen", options: ["bac-ken", "ba-cken", "back-en"], correct: 1 },
+            { q: "Trenne das Wort: machen", options: ["ma-chen", "mac-hen", "mach-en"], correct: 0 }
+        ],
+        questionsL2: [
+            { q: "Trenne das Wort aus dem Arbeitsblatt: Brötchen", options: ["Brötc-hen", "Brö-tchen", "Bröt-chen"], correct: 2 },
+            { q: "Trenne das Wort: Apotheke", options: ["Apo-the-ke", "Apo-t-he-ke", "Apot-he-ke"], correct: 0 },
+            { q: "Trenne das Wort: duschen", options: ["dus-chen", "du-schen", "dusch-en"], correct: 1 },
+            { q: "Korrigiere: Kuc-hen", options: ["Kuc-hen", "Kuch-en", "Ku-chen"], correct: 2 },
+            { q: "Korrigiere: Mat-he", options: ["Mat-he", "Ma-the", "Math-e"], correct: 1 }
+        ]
+    }
+];
+
+let activeObstacle = null;
+let activeSign = null;
+
+function initLevel() {
+    lives = 3;
+    hasWings = false;
+    bombsCount = 0;
+    
+    player.x = 100;
+    player.y = canvas.height / 2;
+    player.vx = 0;
+    player.vy = 0;
+    safeX = player.x;
+    safeY = player.y;
+    
+    // Drache wird pro Level schneller
+    dragon.speed = 90 + (currentLevel * 40);
+    dragon.x = player.x - 800; // Drache startet mit Respektabstand
+    
+    platforms = [];
+    infoSigns = [];
+    questionBlocks = [];
+    jackpotBlocks = [];
+    activeBombs = [];
+    destructibleWalls = [];
+    explosions = [];
+    projectiles = [];
+    floatingTexts = [];
+    
+    const groundY = canvas.height - 50;
+    let currentX = 0;
+    
+    // Start-Plattform
+    platforms.push({ x: -100, y: groundY, w: 1000, h: 100 });
+    currentX = 800;
+    
+    // Zonen mischen, damit die Reihenfolge bei jedem Versuch variiert
+    let shuffledZones = shuffleArray([...zonesData]);
+    
+    // Generiere Levelabschnitte für jede Zone
+    shuffledZones.forEach((zone, zIndex) => {
+        currentX += 150; // Abgrund
+        
+        // Zone Entry mit Infoschild
+        platforms.push({ x: currentX, y: groundY, w: 600, h: 100 });
+        infoSigns.push({
+            x: currentX + 250,
+            y: groundY - 80,
+            w: 60,
+            h: 80,
+            ruleText: zone.ruleText,
+            read: false,
+            lifeGranted: false
+        });
+        
+        currentX += 600;
+        
+        // Fragen-Pool basierend auf dem Level zusammenstellen und mischen
+        let availableQuestions = [];
+        if (currentLevel === 1) {
+            availableQuestions = [...zone.questionsL1];
+        } else if (currentLevel === 2) {
+            availableQuestions = [...zone.questionsL2];
+        } else {
+            availableQuestions = [...zone.questionsL1, ...zone.questionsL2];
+        }
+        availableQuestions = shuffleArray(availableQuestions).slice(0, 5); // Nimm bis zu 5 Fragen
+        
+        // Fragen-Blöcke
+        availableQuestions.forEach((q, qIndex) => {
+            currentX += 200; // Lücke
+            let platWidth = 400;
+            platforms.push({ x: currentX, y: groundY, w: platWidth, h: 100 });
+            
+            // Der Fragezeichen-Block fungiert jetzt als Barriere (sehr tief)
+            questionBlocks.push({
+                x: currentX + platWidth / 2 - 30,
+                y: groundY - 100, 
+                w: 60,
+                h: 100, // Zwingt den Spieler zur Berührung, man kann nicht drunter durch
+                question: q,
+                cleared: false
+            });
+            
+            currentX += platWidth;
+        });
+        
+        // Jackpot-Block für Flügel
+        if (zIndex === 1) {
+            currentX += 200;
+            platforms.push({ x: currentX, y: groundY, w: 200, h: 100 });
+            jackpotBlocks.push({
+                x: currentX + 70, y: groundY - 100, w: 60, h: 100,
+                item: 'wings', cleared: false,
+                question: { q: "⭐ Jackpot: Wie korrigierst du 'Lachs-alve'?", options: ["Lachs-alve", "Lach-sal-ve", "La-chsal-ve"], correct: 1 }
+            });
+            currentX += 200;
+        }
+
+        // Jackpot-Block für Bomben
+        if (zIndex === 3) {
+            currentX += 200;
+            platforms.push({ x: currentX, y: groundY, w: 200, h: 100 });
+            jackpotBlocks.push({
+                x: currentX + 70, y: groundY - 100, w: 60, h: 100,
+                item: 'bomb', cleared: false,
+                question: { q: "⭐ Jackpot: Wie korrigierst du 'Talent-wässerung'?", options: ["Tal-ent-wäs-se-rung", "Ta-lent-wäs-ser-ung", "Ta-len-twäs-se-rung"], correct: 0 }
+            });
+            currentX += 200;
+        }
+        
+        // Destructible Wall in Zone 4 (benötigt Bombe oder hohe Flügel-Sprünge)
+        if (zIndex === 4) {
+            destructibleWalls.push({ x: currentX + 100, y: groundY - 300, w: 60, h: 300 });
+        }
+    });
+    
+    // Zielzone
+    currentX += 200;
+    platforms.push({ x: currentX, y: groundY, w: 1000, h: 100 });
+    goal = { x: currentX + 400, y: groundY - 250, w: 100, h: 250 };
+    
+    camera.x = 0;
+}
+
+/**
+ * UI Functions
+ */
+function showModal(id) {
+    document.getElementById(id).classList.remove('hidden');
+}
+function hideModal(id) {
+    document.getElementById(id).classList.add('hidden');
+}
+
+function speakText(text) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        let msg = new SpeechSynthesisUtterance(text);
+        msg.lang = 'de-DE';
+        window.speechSynthesis.speak(msg);
+    }
+}
+
+function triggerRule(sign) {
+    gameState = 'paused';
+    activeSign = sign;
+    document.getElementById('ruleText').innerText = sign.ruleText;
+    
+    // Text vorlesen
+    speakText(sign.ruleText);
+    
+    // Leben nur beim ersten Mal pro Schild gewähren
+    if (!sign.lifeGranted) {
+        sign.lifeGranted = true;
+        lives++;
+        floatingTexts.push({ x: player.x + player.width/2, y: player.y - 20, text: "+1 Leben!", timer: 2.0 });
+    }
+    
+    showModal('ruleModal');
+}
+
+function triggerQuestion(obstacle) {
+    gameState = 'paused';
+    activeObstacle = obstacle;
+    
+    const q = obstacle.question;
+    document.getElementById('questionText').innerText = q.q;
+    
+    const container = document.getElementById('optionsContainer');
+    container.innerHTML = '';
+    
+    const feedback = document.getElementById('feedbackText');
+    feedback.classList.add('hidden');
+    feedback.className = 'mt-4 font-bold text-lg hidden';
+    
+    q.options.forEach((opt, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'bg-blue-100 hover:bg-blue-200 text-blue-900 border-2 border-blue-300 font-semibold py-3 px-4 rounded-lg transition-colors text-left w-full shadow-sm';
+        btn.innerText = opt;
+        btn.onclick = () => handleAnswer(index, btn);
+        container.appendChild(btn);
+    });
+    
+    showModal('questionModal');
+}
+
+function handleAnswer(selectedIndex, btnElement) {
+    const feedback = document.getElementById('feedbackText');
+    feedback.classList.remove('hidden');
+    
+    // Buttons sperren
+    const btns = document.getElementById('optionsContainer').querySelectorAll('button');
+    btns.forEach(b => b.disabled = true);
+
+    if (selectedIndex === activeObstacle.question.correct) {
+        btnElement.classList.replace('bg-blue-100', 'bg-green-500');
+        btnElement.classList.replace('text-blue-900', 'text-white');
+        
+        // Nur erlaubtes Lob verwenden! (Keine Noten)
+        const feedbackWords = ["Passend!", "Gelungen!", "Treffer!"];
+        const word = feedbackWords[Math.floor(Math.random() * feedbackWords.length)];
+        
+        let itemMsg = "";
+        if (activeObstacle.item === 'wings') {
+            hasWings = true;
+            itemMsg = " Du hast FLÜGEL (Doppelsprung) erhalten!";
+        } else if (activeObstacle.item === 'bomb') {
+            bombsCount += 3;
+            itemMsg = " Du hast 3 BOMBEN (Werfen mit B) erhalten!";
+        }
+
+        feedback.innerText = `${word} Du hast es geschafft!${itemMsg}`;
+        feedback.classList.add('text-green-600');
+        
+        setTimeout(() => {
+            activeObstacle.cleared = true;
+            hideModal('questionModal');
+            gameState = 'playing';
+            lastTime = performance.now();
+            
+            // Drache minimal zurücksetzen, damit der Spieler nicht bestraft wird, weil er nachgedacht hat
+            dragon.x = Math.min(dragon.x, player.x - 600);
+        }, 1500);
+    } else {
+        lives--;
+        btnElement.classList.replace('bg-blue-100', 'bg-red-500');
+        btnElement.classList.replace('text-blue-900', 'text-white');
+        
+        feedback.innerText = `Leider falsch! Du hast noch ${lives} Leben.`;
+        feedback.classList.add('text-red-600');
+        
+        setTimeout(() => {
+            if (lives <= 0) {
+                hideModal('questionModal');
+                gameState = 'gameover';
+                showModal('gameOverScreen');
+            } else {
+                feedback.classList.add('hidden');
+                feedback.classList.remove('text-red-600');
+                btns.forEach(b => {
+                    b.disabled = false;
+                    b.className = 'bg-blue-100 hover:bg-blue-200 text-blue-900 border-2 border-blue-300 font-semibold py-3 px-4 rounded-lg transition-colors text-left w-full shadow-sm';
+                });
+            }
+        }, 2000);
+    }
+}
+
+/**
+ * Game Loop & Physics
+ */
+function update(dt) {
+    if (gameState !== 'playing') return;
+
+    let moveLeft = keys.left || touchInput.left;
+    let moveRight = keys.right || touchInput.right;
+    let jumpPressed = keys.up || touchInput.up;
+    let bombThrowPressed = keys.bomb || touchInput.bomb;
+    let shootPressed = keys.shoot || touchInput.shoot;
+
+    // Horizontal Movement
+    if (moveLeft) { player.vx = -player.speed; player.direction = -1; }
+    else if (moveRight) { player.vx = player.speed; player.direction = 1; }
+    else player.vx = 0;
+
+    if (jumpPressed && !player.jumpWasPressed) {
+        if (player.grounded) {
+            player.vy = player.jumpForce;
+            player.grounded = false;
+            playJumpSound();
+            if (hasWings) player.canDoubleJump = true;
+        } else if (hasWings && player.canDoubleJump) {
+            player.vy = player.jumpForce;
+            player.canDoubleJump = false; // Doppelsprung aufbrauchen
+            playJumpSound();
+        }
+    }
+    player.jumpWasPressed = jumpPressed;
+
+    // Bombe werfen
+    if (bombThrowPressed && !player.bombWasPressed && bombsCount > 0) {
+        bombsCount--;
+        activeBombs.push({
+            x: player.x + player.width / 2,
+            y: player.y,
+            vx: player.vx >= 0 ? 400 : -400,
+            vy: -300,
+            timer: 1.5,
+            radius: 120 // Explosionsradius
+        });
+    }
+    player.bombWasPressed = bombThrowPressed;
+
+    // Projektil schießen (auch nach oben)
+    let shootUpPressed = (keys.up && keys.shoot) || touchInput.shootUp;
+    if (shootPressed && !player.shootWasPressed) {
+        projectiles.push({
+            x: player.x + (player.direction === 1 && !shootUpPressed ? player.width : (shootUpPressed ? player.width/2 : 0)),
+            y: shootUpPressed ? player.y - 10 : player.y + player.height / 2,
+            vx: shootUpPressed ? 0 : player.direction * 600,
+            vy: shootUpPressed ? -600 : 0,
+            radius: 8,
+            timer: 1.5
+        });
+    }
+    player.shootWasPressed = shootPressed;
+
+    player.vy += player.gravity * dt;
+    if (player.vy > 1000) player.vy = 1000;
+
+    // --- Drachen Update ---
+    dragon.y = player.y - 30; // Drache fliegt bösartig auf Spielerhöhe
+    dragon.x += dragon.speed * dt;
+    
+    // Verhindern, dass der Drache unendlich weit zurückfällt
+    if (player.x - dragon.x > 1200) {
+        dragon.x = player.x - 1200;
+    }
+    
+    if (checkAABB(player, dragon)) {
+        lives--;
+        if (lives <= 0) {
+            gameState = 'gameover';
+            showModal('gameOverScreen');
+        } else {
+            // Respawn am Checkpoint
+            player.x = safeX;
+            player.y = safeY;
+            player.vx = 0;
+            player.vy = 0;
+            dragon.x = player.x - 800; // Drache zurücksetzen
+            camera.x = Math.max(0, player.x - canvas.width / 3);
+            floatingTexts.push({ x: player.x + player.width/2, y: player.y - 40, text: "Aua! Der Drache!", timer: 2.0 });
+        }
+        return; // Direkt aussteigen, damit wir den Respawn sauber händeln
+    }
+
+    // --- Checkpoint Update ---
+    if (player.grounded) {
+        safeX = player.x;
+        safeY = player.y - 5; 
+    }
+
+    // --- Projektile Update ---
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        let p = projectiles[i];
+        p.x += p.vx * dt;
+        if (p.vy) p.y += p.vy * dt;
+        p.timer -= dt;
+        let hit = false;
+
+        // Check against question blocks
+        for (let qb of questionBlocks) {
+            if (!qb.cleared && checkCircleAABB(p, qb)) {
+                triggerQuestion(qb);
+                hit = true;
+                break;
+            }
+        }
+        // Check against jackpot blocks
+        if (!hit) {
+            for (let jb of jackpotBlocks) {
+                if (!jb.cleared && checkCircleAABB(p, jb)) {
+                    triggerQuestion(jb);
+                    hit = true;
+                    break;
+                }
+            }
+        }
+
+        if (hit || p.timer <= 0) {
+            projectiles.splice(i, 1);
+        }
+    }
+    
+    // --- Floating Texts Update ---
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        floatingTexts[i].y -= 50 * dt; // move up slowly
+        floatingTexts[i].timer -= dt;
+        if (floatingTexts[i].timer <= 0) floatingTexts.splice(i, 1);
+    }
+
+    // --- Bomben & Explosionen Update ---
+    for (let i = explosions.length - 1; i >= 0; i--) {
+        explosions[i].timer -= dt;
+        if (explosions[i].timer <= 0) explosions.splice(i, 1);
+    }
+
+    for (let i = activeBombs.length - 1; i >= 0; i--) {
+        let b = activeBombs[i];
+        b.vy += player.gravity * dt;
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        b.timer -= dt;
+
+        // Bounce am Boden
+        for (let p of platforms) {
+            if (b.x > p.x && b.x < p.x + p.w && b.y + 12 > p.y && b.y < p.y + p.h) {
+                b.y = p.y - 12;
+                b.vy = -b.vy * 0.5;
+                b.vx *= 0.8;
+            }
+        }
+
+        if (b.timer <= 0) {
+            explosions.push({ x: b.x, y: b.y, timer: 0.4, radius: b.radius });
+            // Mauern zerstören
+            for (let j = destructibleWalls.length - 1; j >= 0; j--) {
+                let dw = destructibleWalls[j];
+                let cx = dw.x + dw.w / 2;
+                let cy = dw.y + dw.h / 2;
+                let dist = Math.hypot(b.x - cx, b.y - cy);
+                if (dist < b.radius + Math.max(dw.w, dw.h)) {
+                    destructibleWalls.splice(j, 1);
+                }
+            }
+            
+            // Fragezeichen-Blöcke durch Explosion auslösen
+            for (let qb of questionBlocks) {
+                if (!qb.cleared) {
+                    let cx = qb.x + qb.w / 2;
+                    let cy = qb.y + qb.h / 2;
+                    if (Math.hypot(b.x - cx, b.y - cy) < b.radius + 40) {
+                        triggerQuestion(qb);
+                    }
+                }
+            }
+            // Jackpot-Blöcke durch Explosion auslösen
+            for (let jb of jackpotBlocks) {
+                if (!jb.cleared) {
+                    let cx = jb.x + jb.w / 2;
+                    let cy = jb.y + jb.h / 2;
+                    if (Math.hypot(b.x - cx, b.y - cy) < b.radius + 40) {
+                        triggerQuestion(jb);
+                    }
+                }
+            }
+            
+            activeBombs.splice(i, 1);
+        }
+    }
+
+    // --- X Kollisionen ---
+    player.x += player.vx * dt;
+    if (player.x < 0) player.x = 0;
+
+    // Trigger für Blöcke von JEDER Seite (links/rechts/oben/unten)
+    let touchedBlock = null;
+    for (let b of questionBlocks) {
+        if (!b.cleared && checkAABB(player, b)) { touchedBlock = b; break; }
+    }
+    if (!touchedBlock) {
+        for (let jb of jackpotBlocks) {
+            if (!jb.cleared && checkAABB(player, jb)) { touchedBlock = jb; break; }
+        }
+    }
+    
+    if (touchedBlock) {
+        triggerQuestion(touchedBlock);
+        // Damit man beim Fortsetzen nicht sofort wieder in die Kollision läuft:
+        player.x -= player.vx * dt * 2; 
+        player.y -= player.vy * dt * 2;
+        player.vx = 0;
+        player.vy = 0;
+        return;
+    }
+
+    for (let p of platforms) {
+        if (checkAABB(player, p)) {
+            if (player.vx > 0) player.x = p.x - player.width;
+            else if (player.vx < 0) player.x = p.x + p.w;
+            player.vx = 0;
+        }
+    }
+    
+    for (let dw of destructibleWalls) {
+        if (checkAABB(player, dw)) {
+            if (player.vx > 0) player.x = dw.x - player.width;
+            else if (player.vx < 0) player.x = dw.x + dw.w;
+            player.vx = 0;
+        }
+    }
+
+    // --- Y Kollisionen ---
+    player.y += player.vy * dt;
+    player.grounded = false;
+
+    for (let p of platforms) {
+        if (checkAABB(player, p)) {
+            if (player.vy > 0) { // Fallen
+                player.y = p.y - player.height;
+                player.grounded = true;
+                player.vy = 0;
+            } else if (player.vy < 0) { // Springen gegen Decke/Plattform
+                player.y = p.y + p.h;
+                player.vy = 0;
+            }
+        }
+    }
+
+    for (let dw of destructibleWalls) {
+        if (checkAABB(player, dw)) {
+            if (player.vy > 0) {
+                player.y = dw.y - player.height;
+                player.grounded = true;
+                player.vy = 0;
+            } else if (player.vy < 0) {
+                player.y = dw.y + dw.h;
+                player.vy = 0;
+            }
+        }
+    }
+
+    // Infoschilder Berührung (egal ob X oder Y)
+    for (let sign of infoSigns) {
+        if (!sign.read && checkAABB(player, sign)) {
+            triggerRule(sign);
+            return;
+        }
+    }
+
+    // Absturz ins Leere
+    if (player.y > canvas.height + 200) {
+        lives--;
+        if (lives <= 0) {
+            gameState = 'gameover';
+            showModal('gameOverScreen');
+        } else {
+            // Respawn am Checkpoint (letzter sicherer Boden)
+            player.x = safeX;
+            player.y = safeY;
+            player.vx = 0;
+            player.vy = 0;
+            dragon.x = player.x - 800;
+            camera.x = Math.max(0, player.x - canvas.width / 3);
+        }
+    }
+
+    // Ziel erreicht
+    if (checkAABB(player, goal)) {
+        gameState = 'won';
+        if (currentLevel < 3) {
+            document.getElementById('victoryTitle').innerText = `Level ${currentLevel} Geschafft!`;
+            document.getElementById('victoryText').innerText = `Klasse gemacht! Mache dich bereit für Level ${currentLevel + 1}.`;
+            document.getElementById('nextLevelBtn').classList.remove('hidden');
+        } else {
+            document.getElementById('victoryTitle').innerText = "Spiel Gewonnen!";
+            document.getElementById('victoryText').innerText = "Du hast alle 3 Level gemeistert. Du bist ein wahrer Silbentrennungsprofi!";
+            document.getElementById('nextLevelBtn').classList.add('hidden');
+        }
+        showModal('victoryScreen');
+    }
+
+    // Kamera folgt
+    let targetCamX = player.x - canvas.width / 3;
+    if (targetCamX < 0) targetCamX = 0;
+    camera.x += (targetCamX - camera.x) * 5 * dt;
+}
+
+function checkAABB(rect1, rect2) {
+    return (rect1.x < rect2.x + rect2.w &&
+            rect1.x + rect1.width > rect2.x &&
+            rect1.y < rect2.y + rect2.h &&
+            rect1.y + rect1.height > rect2.y);
+}
+
+function checkCircleAABB(circle, rect) {
+    let testX = circle.x;
+    let testY = circle.y;
+
+    if (circle.x < rect.x) testX = rect.x;
+    else if (circle.x > rect.x + rect.w) testX = rect.x + rect.w;
+
+    if (circle.y < rect.y) testY = rect.y;
+    else if (circle.y > rect.y + rect.h) testY = rect.y + rect.h;
+
+    let distX = circle.x - testX;
+    let distY = circle.y - testY;
+    let distance = Math.sqrt((distX*distX) + (distY*distY));
+
+    return distance <= circle.radius;
+}
+
+/**
+ * Rendering
+ */
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    for(let i=0; i<30; i++) {
+        let cx = (i * 400 - camera.x * 0.2) % (canvas.width + 400) - 200;
+        ctx.beginPath();
+        ctx.arc(cx, canvas.height - 250, 100, 0, Math.PI * 2);
+        ctx.arc(cx + 80, canvas.height - 250, 80, 0, Math.PI * 2);
+        ctx.arc(cx - 80, canvas.height - 250, 60, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+
+    for (let p of platforms) {
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.fillStyle = '#22C55E';
+        ctx.fillRect(p.x, p.y, p.w, 15);
+    }
+
+    ctx.fillStyle = '#FBBF24';
+    ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
+    ctx.fillStyle = '#FFF';
+    ctx.font = '24px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText("ZIEL", goal.x + goal.w/2, goal.y + 40);
+
+    // Infoschilder zeichnen
+    for (let sign of infoSigns) {
+        if (sign.read) ctx.globalAlpha = 0.5;
+        
+        // Blaues "Buch/Schild"
+        ctx.fillStyle = '#3B82F6';
+        ctx.fillRect(sign.x, sign.y, sign.w, sign.h);
+        
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 40px Inter';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText("i", sign.x + sign.w/2, sign.y + sign.h/2);
+        
+        ctx.globalAlpha = 1.0;
+    }
+
+    // Fragezeichen-Blöcke zeichnen
+    for (let obs of questionBlocks) {
+        if (obs.cleared) {
+            // Leerer Block nach Lösung
+            ctx.fillStyle = '#9CA3AF';
+            ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+            ctx.strokeStyle = '#6B7280';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+            continue;
+        }
+        
+        ctx.fillStyle = '#F59E0B';
+        ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+        
+        ctx.strokeStyle = '#B45309';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+        
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 40px Inter';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText("?", obs.x + obs.w/2, obs.y + obs.h/2);
+    }
+    
+    // Jackpot-Blöcke zeichnen
+    for (let jb of jackpotBlocks) {
+        if (jb.cleared) {
+            ctx.fillStyle = '#9CA3AF';
+            ctx.fillRect(jb.x, jb.y, jb.w, jb.h);
+            ctx.strokeStyle = '#6B7280';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(jb.x, jb.y, jb.w, jb.h);
+            continue;
+        }
+        
+        let time = performance.now() / 200;
+        ctx.fillStyle = (Math.floor(time) % 2 === 0) ? '#FDE047' : '#F59E0B'; // Blink-Effekt
+        ctx.fillRect(jb.x, jb.y, jb.w, jb.h);
+        
+        ctx.strokeStyle = '#D97706';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(jb.x, jb.y, jb.w, jb.h);
+        
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 36px Inter';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText("⭐", jb.x + jb.w/2, jb.y + jb.h/2);
+    }
+
+    // Zerstörbare Wände
+    for (let dw of destructibleWalls) {
+        ctx.fillStyle = '#64748B'; 
+        ctx.fillRect(dw.x, dw.y, dw.w, dw.h);
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 2;
+        // Mauer-Muster
+        for (let i = 0; i < dw.h; i += 30) {
+            ctx.strokeRect(dw.x, dw.y + i, dw.w, 30);
+        }
+    }
+    
+    // Bomben
+    for (let b of activeBombs) {
+        ctx.fillStyle = '#111827';
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+        // Lunte
+        ctx.strokeStyle = '#EF4444';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y - 12);
+        ctx.lineTo(b.x + (b.timer % 0.5) * 15, b.y - 25);
+        ctx.stroke();
+    }
+    
+    // Explosionen
+    for (let ex of explosions) {
+        ctx.fillStyle = `rgba(239, 68, 68, ${ex.timer / 0.4})`; // Roter Fade-out
+        ctx.beginPath();
+        ctx.arc(ex.x, ex.y, ex.radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Projektile
+    for (let p of projectiles) {
+        ctx.fillStyle = '#38BDF8';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#0284C7';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+    
+    // Drache zeichnen
+    ctx.font = '60px Inter';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText("🐉", dragon.x + dragon.w/2, dragon.y + dragon.h/2);
+    
+    // Floating Texts (+1 Leben Animation)
+    for (let ft of floatingTexts) {
+        ctx.fillStyle = `rgba(34, 197, 94, ${Math.min(1, ft.timer)})`;
+        ctx.font = 'bold 24px Inter';
+        ctx.textAlign = 'center';
+        // Schatten für bessere Lesbarkeit
+        ctx.shadowColor = "black";
+        ctx.shadowBlur = 4;
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.shadowBlur = 0; // reset
+    }
+
+    // Spieler
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+    
+    // Flügel zeichnen, falls Item besessen
+    if (hasWings) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.beginPath();
+        ctx.ellipse(player.x - 5, player.y + 15, 15, 8, -Math.PI/4, 0, Math.PI*2);
+        ctx.ellipse(player.x + player.width + 5, player.y + 15, 15, 8, Math.PI/4, 0, Math.PI*2);
+        ctx.fill();
+    }
+    
+    ctx.fillStyle = 'white';
+    let eyeOffsetX = (player.direction === 1) ? 5 : -5;
+    ctx.fillRect(player.x + 8 + eyeOffsetX, player.y + 10, 8, 12);
+    ctx.fillRect(player.x + 24 + eyeOffsetX, player.y + 10, 8, 12);
+    ctx.fillStyle = 'black';
+    ctx.fillRect(player.x + 10 + eyeOffsetX, player.y + 14, 4, 4);
+    ctx.fillRect(player.x + 26 + eyeOffsetX, player.y + 14, 4, 4);
+
+    ctx.restore();
+    
+    // HUD - Leben (Immer im Vordergrund fest auf dem Bildschirm)
+    ctx.font = '30px Inter';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    let heartsString = "Leben: ";
+    for (let i = 0; i < lives; i++) heartsString += "❤️ ";
+    
+    // Text Schatten
+    ctx.fillStyle = '#000';
+    ctx.fillText(heartsString, 22, 22);
+    // Text Vordergrund
+    ctx.fillStyle = '#FFF';
+    ctx.fillText(heartsString, 20, 20);
+    
+    // Items HUD
+    let itemStr = (hasWings ? "🦅 Flügel " : "") + (bombsCount > 0 ? "💣 Bomben: " + bombsCount : "");
+    if (itemStr) {
+        ctx.fillStyle = '#000';
+        ctx.fillText(itemStr, 22, 62);
+        ctx.fillStyle = '#FFF';
+        ctx.fillText(itemStr, 20, 60);
+    }
+}
+
+function gameLoop(timestamp) {
+    let dt = (timestamp - lastTime) / 1000;
+    if (dt > 0.1) dt = 0.1; // Max delta to prevent huge jumps
+    lastTime = timestamp;
+
+    update(dt);
+    draw();
+
+    requestAnimationFrame(gameLoop);
+}
+
+/**
+ * Event Listeners for UI
+ */
+document.getElementById('startBtn').addEventListener('click', () => {
+    hideModal('startScreen');
+    currentLevel = 1;
+    initLevel();
+    gameState = 'playing';
+    lastTime = performance.now();
+    requestAnimationFrame(gameLoop);
+});
+
+document.getElementById('nextLevelBtn').addEventListener('click', () => {
+    hideModal('victoryScreen');
+    currentLevel++;
+    initLevel();
+    gameState = 'playing';
+    lastTime = performance.now();
+});
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+    hideModal('victoryScreen');
+    currentLevel = 1;
+    initLevel();
+    gameState = 'playing';
+    lastTime = performance.now();
+});
+
+document.getElementById('ruleBtn').addEventListener('click', () => {
+    if(activeSign) activeSign.read = true;
+    hideModal('ruleModal');
+    gameState = 'playing';
+    lastTime = performance.now();
+});
+
+document.getElementById('restartGameBtn').addEventListener('click', () => {
+    hideModal('gameOverScreen');
+    initLevel();
+    gameState = 'playing';
+    lastTime = performance.now();
+});
+
+// Init on load
+initLevel();
+draw(); // Initial draw for background
+
+</script>
+</body>
+</html>
